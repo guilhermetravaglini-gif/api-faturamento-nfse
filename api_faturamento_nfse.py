@@ -79,9 +79,18 @@ class ConsultaResponse(BaseModel):
     ano: int
     mes_filtrado: Optional[int]
     quantidade_autorizadas: int
-    total_autorizado: float
-    total_cancelado: float
-    detalhamento_por_mes: Dict[str, float]
+    total_autorizado: str
+    total_cancelado: str
+    detalhamento_por_mes: Dict[str, str]
+
+
+# ============================================
+# FUNÇÕES AUXILIARES
+# ============================================
+
+def formatar_valor_br(valor: float) -> str:
+    """Formata valor para padrão brasileiro: 1.234,56"""
+    return f"{valor:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
 
 
 # ============================================
@@ -288,7 +297,7 @@ def extrair_contribuinte(session: requests.Session):
 
 
 def totalizar_por_mes(notas: list, ano: int, mes_filtro: Optional[int]):
-    """Totaliza valores por mês"""
+    """Totaliza valores por mês com formatação brasileira"""
     # Inicializa todos os meses do ano com zero
     meses = {}
     if mes_filtro is not None:
@@ -305,7 +314,10 @@ def totalizar_por_mes(notas: list, ano: int, mes_filtro: Optional[int]):
         if chave in meses:
             meses[chave] += nota['valor']
     
-    return meses
+    # Arredonda e formata para padrão brasileiro
+    meses_formatados = {k: formatar_valor_br(round(v, 2)) for k, v in meses.items()}
+    
+    return meses_formatados
 
 
 # ============================================
@@ -372,10 +384,10 @@ def consultar(req: ConsultaRequest):
         notas = consultar_notas(session, req.ano, req.mes)
         
         # Totaliza
-        total_autorizado = sum(n['valor'] for n in notas)
+        total_autorizado = round(sum(n['valor'] for n in notas), 2)
         qtd_autorizadas = len(notas)
         
-        # Detalhamento por mês
+        # Detalhamento por mês (já formatado)
         detalhamento = totalizar_por_mes(notas, req.ano, req.mes)
         
         # Monta resposta
@@ -385,8 +397,8 @@ def consultar(req: ConsultaRequest):
             ano=req.ano,
             mes_filtrado=req.mes,
             quantidade_autorizadas=qtd_autorizadas,
-            total_autorizado=total_autorizado,
-            total_cancelado=0.0,  # Canceladas não são contabilizadas
+            total_autorizado=formatar_valor_br(total_autorizado),
+            total_cancelado=formatar_valor_br(0.0),
             detalhamento_por_mes=detalhamento
         )
         
