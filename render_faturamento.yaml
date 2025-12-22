@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: api-faturamento-nfse
+    env: python
+    region: oregon
+    plan: free
+    buildCommand: pip install -r requirements_faturamento.txt
+    startCommand: uvicorn api_faturamento_nfse:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
