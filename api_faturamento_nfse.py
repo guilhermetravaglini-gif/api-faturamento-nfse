@@ -1,6 +1,7 @@
 """
 API CONSULTA FATURAMENTO NFS-E
 Endpoint para consulta de notas fiscais com detalhamento mensal
+Valores retornados em CENTAVOS (inteiro)
 """
 
 from fastapi import FastAPI, HTTPException
@@ -23,8 +24,8 @@ from cryptography.hazmat.primitives import serialization
 
 app = FastAPI(
     title="API Faturamento NFS-e",
-    description="Consulta de faturamento com detalhamento mensal",
-    version="1.0.0"
+    description="Consulta de faturamento com detalhamento mensal (valores em centavos)",
+    version="2.0.0"
 )
 
 app.add_middleware(
@@ -79,18 +80,20 @@ class ConsultaResponse(BaseModel):
     ano: int
     mes_filtrado: Optional[int]
     quantidade_autorizadas: int
-    total_autorizado: str
-    total_cancelado: str
-    detalhamento_por_mes: Dict[str, str]
+    total_autorizado: int
+    total_cancelado: int
+    detalhamento_por_mes: Dict[str, int]
 
 
 # ============================================
 # FUNÇÕES AUXILIARES
 # ============================================
 
-def formatar_valor_br(valor: float) -> str:
-    """Formata valor para padrão brasileiro: 1.234,56"""
-    return f"{valor:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
+def reais_para_centavos(valor_reais: float) -> int:
+    """Converte valor em reais para centavos (inteiro)
+    Exemplo: 45780.01 → 4578001
+    """
+    return int(round(valor_reais * 100))
 
 
 # ============================================
@@ -297,7 +300,7 @@ def extrair_contribuinte(session: requests.Session):
 
 
 def totalizar_por_mes(notas: list, ano: int, mes_filtro: Optional[int]):
-    """Totaliza valores por mês com formatação brasileira"""
+    """Totaliza valores por mês em centavos (inteiro)"""
     # Inicializa todos os meses do ano com zero
     meses = {}
     if mes_filtro is not None:
@@ -314,10 +317,10 @@ def totalizar_por_mes(notas: list, ano: int, mes_filtro: Optional[int]):
         if chave in meses:
             meses[chave] += nota['valor']
     
-    # Arredonda e formata para padrão brasileiro
-    meses_formatados = {k: formatar_valor_br(round(v, 2)) for k, v in meses.items()}
+    # Converte para centavos (inteiro)
+    meses_centavos = {k: reais_para_centavos(v) for k, v in meses.items()}
     
-    return meses_formatados
+    return meses_centavos
 
 
 # ============================================
@@ -329,7 +332,9 @@ def root():
     """Informações da API"""
     return {
         "api": "Faturamento NFS-e",
-        "version": "1.0.0",
+        "version": "2.0.0",
+        "nota": "Valores retornados em CENTAVOS (inteiro)",
+        "exemplo": "45780.01 reais = 4578001 centavos",
         "endpoints": {
             "POST /consultar": "Consulta faturamento",
             "GET /health": "Status da API",
@@ -348,6 +353,9 @@ def health():
 def consultar(req: ConsultaRequest):
     """
     Consulta faturamento de NFS-e com detalhamento mensal
+    
+    IMPORTANTE: Valores retornados em CENTAVOS (inteiro)
+    Exemplo: R$ 45.780,01 = 4578001
     
     Parâmetros obrigatórios:
     - auth_method: 1 (certificado) ou 2 (login/senha)
@@ -383,11 +391,14 @@ def consultar(req: ConsultaRequest):
         # Consulta notas
         notas = consultar_notas(session, req.ano, req.mes)
         
-        # Totaliza
-        total_autorizado = round(sum(n['valor'] for n in notas), 2)
+        # Totaliza em reais
+        total_autorizado_reais = round(sum(n['valor'] for n in notas), 2)
         qtd_autorizadas = len(notas)
         
-        # Detalhamento por mês (já formatado)
+        # Converte para centavos
+        total_autorizado_centavos = reais_para_centavos(total_autorizado_reais)
+        
+        # Detalhamento por mês (já em centavos)
         detalhamento = totalizar_por_mes(notas, req.ano, req.mes)
         
         # Monta resposta
@@ -397,8 +408,8 @@ def consultar(req: ConsultaRequest):
             ano=req.ano,
             mes_filtrado=req.mes,
             quantidade_autorizadas=qtd_autorizadas,
-            total_autorizado=formatar_valor_br(total_autorizado),
-            total_cancelado=formatar_valor_br(0.0),
+            total_autorizado=total_autorizado_centavos,
+            total_cancelado=0,  # Canceladas não são contabilizadas
             detalhamento_por_mes=detalhamento
         )
         
